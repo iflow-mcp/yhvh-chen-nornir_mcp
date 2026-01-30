@@ -2,10 +2,20 @@ import sys
 import argparse
 import os
 from importlib import import_module
-import anyio  # The original script used anyio, so we will too.
+import anyio
 
 
-async def start_server(server, host, port):
+async def start_server_stdio(server):
+    """
+    Start the server with stdio transport.
+    """
+    if not hasattr(server, 'run'):
+        raise RuntimeError("The 'server' object has no 'run' method.")
+    print("Starting FastMCP server with stdio transport", file=sys.stderr)
+    await server.run(transport="stdio")
+
+
+async def start_server_http(server, host, port):
     """
     Finds and awaits the specific async run method on the server object.
     """
@@ -28,7 +38,7 @@ async def start_server(server, host, port):
                 "The 'server' object has no 'run_streamable_http_async' or 'run' method."
             )
 
-    print(f"Starting FastMCP async server on http://{host}:{port}")
+    print(f"Starting FastMCP async server on http://{host}:{port}", file=sys.stderr)
     await run_fn()
 
 
@@ -37,9 +47,10 @@ def main():
     Parses arguments and starts the server using an async runner.
     """
     parser = argparse.ArgumentParser(description="Run Nornir MCP server")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to.")
+    parser.add_argument("--transport", default="stdio", choices=["stdio", "http"], help="Transport protocol to use (stdio or http)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind the server to (http only).")
     parser.add_argument(
-        "--port", type=int, default=8000, help="Port to run the server on."
+        "--port", type=int, default=8000, help="Port to run the server on (http only)."
     )
     args = parser.parse_args()
 
@@ -58,9 +69,12 @@ def main():
         raise RuntimeError("A 'server' object was not found in the 'server.py' module.")
 
     try:
-        anyio.run(start_server, server, args.host, args.port)
+        if args.transport == "stdio":
+            anyio.run(start_server_stdio, server)
+        else:
+            anyio.run(start_server_http, server, args.host, args.port)
     except KeyboardInterrupt:
-        print("\nServer stopped.")
+        print("\nServer stopped.", file=sys.stderr)
     except Exception as e:
         print(f"An error occurred while trying to run the server: {e}", file=sys.stderr)
         sys.exit(1)
